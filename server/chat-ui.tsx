@@ -1,8 +1,8 @@
 import "./global.server";
 
-function Layout({ children, assets }: React.PropsWithChildren<{ assets: string[] }>) {
-    const cssFiles = assets.filter((asset) => asset.endsWith(".css"));
-    const jsFiles = assets.filter((asset) => asset.endsWith(".js"));
+function Layout({ children }: React.PropsWithChildren) {
+    const cssFiles = buildAssets.css;
+    const jsFiles = buildAssets.js;
     return (
         <html lang="en">
             <head>
@@ -35,9 +35,9 @@ function Form({ disabled }: { disabled?: boolean }) {
     );
 }
 
-export function Chat({ assets }: { assets: string[] }) {
+export function Chat() {
     return (
-        <Layout assets={assets}>
+        <Layout>
             <div>
                 <h1>htmx chat</h1>
                 <main className="chat">

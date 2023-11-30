@@ -29,7 +29,20 @@ const build = await Bun.build({
 });
 
 const currentDir = import.meta.dir; // *note: no trailing slash
-const assets = build.outputs.map((x) => x.path.replace(currentDir, "."));
+
+declare global {
+    var buildAssets: Record<string, string[]>;
+}
+const buildAssets = build.outputs.map((x) => x.path.replace(currentDir, "."));
+globalThis.buildAssets = buildAssets.reduce(
+    (acc, cur) => {
+        const ext = cur.split(".").pop()!;
+        acc[ext] = acc[ext] ?? [];
+        acc[ext].push(cur);
+        return acc;
+    },
+    {} as Record<string, string[]>,
+);
 
 Bun.serve({
     port: 3000,
@@ -41,7 +54,7 @@ Bun.serve({
         }
 
         if (path === "/" && req.method === Method.GET) {
-            const html = await renderToReadableStream(Chat({ assets }));
+            const html = await renderToReadableStream(Chat());
             return new Response(html, {
                 headers: {
                     "Content-Type": "text/html",
