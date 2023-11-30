@@ -1,0 +1,24 @@
+{
+  "name": "ai-chat-stream-htmx",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@babel/runtime": "^7.23.2",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@typescript-eslint/eslint-plugin": "^6.7.3",
+    "@typescript-eslint/parser": "^6.7.3",
+    "@types/web": "^0.0.123",
+    "bun-types": "^1.0.14",
+    "eslint": "^8.53.0",
+    "prettier": "^3.1.0",
+    "prettier-plugin-tailwindcss": "^0.5.7",
+    "typescript": "^5.2.2"
+  },
+  "dependencies": {
+    "eslint-plugin-import": "^2.29.0",
+    "openai": "^4.17.4",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  }
+}

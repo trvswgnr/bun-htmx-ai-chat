@@ -21,35 +21,45 @@ const handleScroll = () => {
 scroller.addEventListener("scroll", handleScroll, false);
 
 class StreamingContent extends HTMLElement {
-    public eventSource: EventSource | null = null;
-    public trigger: string = "message";
     constructor() {
         super();
     }
 
-    public static messageHandler<T>(this: StreamingContent, event: MessageEvent<T>) {
-        if (this.eventSource === null) return;
-        const data: OpenAI.ChatCompletionChunk = JSON.parse(String(event.data));
-        const choice = data.choices[0];
-        if (choice === undefined || choice.finish_reason === "stop") {
-            this.eventSource.removeEventListener(
-                this.trigger,
-                StreamingContent.messageHandler.bind(this),
-            );
-            this.eventSource.close();
-            return;
-        }
-        const message = choice.delta.content;
-        this.innerHTML += message;
-    }
-
     connectedCallback() {
+        if (scroller === null) throw new Error("no `.scroller` element found");
         let endpoint = this.getAttribute("endpoint");
-        this.trigger = this.getAttribute("event") || "message";
         if (!endpoint) throw new Error("endpoint attribute is required");
         endpoint = formatEndpoint(endpoint);
-        this.eventSource = new EventSource(endpoint);
-        this.eventSource.addEventListener(this.trigger, StreamingContent.messageHandler.bind(this));
+        const eventSource = new EventSource(endpoint);
+        const handleChunk = (event: MessageEvent<string>) => {
+            const data: OpenAI.ChatCompletionChunk = JSON.parse(event.data);
+            const choice = data.choices.nth(0);
+            if (choice === null || choice.finish_reason === "stop") {
+                eventSource.removeEventListener("chunk", handleChunk);
+                eventSource.close();
+                const formButton = document.querySelector<HTMLButtonElement>("#submit");
+                if (!formButton) throw new Error("no form button");
+                formButton.disabled = false;
+                formButton.innerHTML = "Submit";
+                return;
+            }
+            const message = choice.delta.content;
+            this.innerHTML += message;
+            if (!scroller.classList.contains("auto-scroll")) return;
+            scroller.scrollTo({
+                top: scroller.scrollHeight,
+                left: 0,
+                behavior: "instant",
+            });
+        };
+        eventSource.addEventListener("chunk", handleChunk);
+
+        scroller.scrollTo({
+            top: scroller.scrollHeight,
+            left: 0,
+            behavior: "instant",
+        });
+        scroller.classList.add("auto-scroll");
     }
 }
 
