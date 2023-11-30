@@ -2,6 +2,7 @@ import { renderToReadableStream } from "react-dom/server";
 import OpenAI from "openai";
 const openai = new OpenAI();
 import { Chat, FormWithMessage } from "./server";
+import _messages from "./db/messages.json";
 
 enum Method {
     GET = "GET",
@@ -11,38 +12,19 @@ enum Method {
     DELETE = "DELETE",
 }
 
-const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: "You are a helpful assistant." },
-];
+const messages = _messages as OpenAI.Chat.Completions.ChatCompletionMessageParam[];
+
+async function addMessage(message: OpenAI.Chat.Completions.ChatCompletionMessageParam) {
+    messages.push(message);
+    const file = Bun.file("./db/messages.json");
+    const writer = file.writer();
+    writer.write(JSON.stringify(messages));
+    writer.end();
+}
 
 const messageQueue: string[] = [];
 
-const outdir = "./public";
-
-await cleanFolder(outdir);
-
-const build = await Bun.build({
-    entrypoints: ["./client/index.ts"],
-    outdir,
-    naming: "[dir]/[name].[hash].[ext]",
-    sourcemap: "external",
-});
-
-const currentDir = import.meta.dir; // *note: no trailing slash
-
-declare global {
-    var buildAssets: Record<string, string[]>;
-}
-const buildAssets = build.outputs.map((x) => x.path.replace(currentDir, "."));
-globalThis.buildAssets = buildAssets.reduce(
-    (acc, cur) => {
-        const ext = cur.split(".").pop()!;
-        acc[ext] = acc[ext] ?? [];
-        acc[ext].push(cur);
-        return acc;
-    },
-    {} as Record<string, string[]>,
-);
+await build();
 
 Bun.serve({
     port: 3000,
@@ -54,7 +36,7 @@ Bun.serve({
         }
 
         if (path === "/" && req.method === Method.GET) {
-            const html = await renderToReadableStream(Chat());
+            const html = await renderToReadableStream(Chat({ messages }));
             return new Response(html, {
                 headers: {
                     "Content-Type": "text/html",
@@ -69,7 +51,11 @@ Bun.serve({
                 type: "direct",
                 async pull(controller) {
                     if (!message) return;
-                    messages.push({ role: "user", content: message });
+                    addMessage({ role: "user", content: message });
+                    const assistantMessage: OpenAI.ChatCompletionMessageParam = {
+                        role: "assistant",
+                        content: "",
+                    };
                     const completion = await openai.chat.completions.create({
                         messages: messages,
                         model: "gpt-3.5-turbo",
@@ -78,8 +64,20 @@ Bun.serve({
                     const stream = completion.toReadableStream();
                     for await (const chunk of stream) {
                         const json = textDecoder.decode(chunk);
-                        controller.write(`event: chunk\ndata: ${json}\n\n`);
+                        const data: OpenAI.ChatCompletionChunk = JSON.parse(json);
+                        const choice = data.choices.nth(0);
+                        if (choice === null || choice.finish_reason === "stop") {
+                            controller.write(`data: ${JSON.stringify(null)}\n\n`);
+                            controller.flush();
+                            break;
+                        }
+                        const message = choice.delta.content ?? "";
+                        assistantMessage.content += message;
+                        controller.write(`data: ${JSON.stringify(message)}\n\n`);
                         controller.flush();
+                    }
+                    if (assistantMessage.content) {
+                        addMessage(assistantMessage);
                     }
                     controller.close();
                 },
@@ -107,6 +105,38 @@ Bun.serve({
     },
 });
 
+declare global {
+    var buildAssets: Record<string, string[]>;
+}
+
+async function build() {
+    const outdir = "./public";
+
+    await cleanFolder(outdir);
+
+    const build = await Bun.build({
+        entrypoints: ["./client/index.ts"],
+        outdir,
+        naming: "[dir]/[name].[hash].[ext]",
+        sourcemap: "external",
+    });
+
+    const currentDir = import.meta.dir; // *note: no trailing slash
+
+    const buildAssetPaths: string[] = [];
+    for (const output of build.outputs) {
+        const path = output.path.replace(currentDir, ".");
+        buildAssetPaths.push(path);
+    }
+    const buildAssets: Record<string, string[]> = {};
+    for (const path of buildAssetPaths) {
+        const ext = path.split(".").pop()!;
+        buildAssets[ext] = buildAssets[ext] ?? [];
+        buildAssets[ext].push(path);
+    }
+    globalThis.buildAssets = buildAssets;
+}
+
 async function cleanFolder(folder: `./${string}`) {
     const { readdir, unlink } = await import("node:fs/promises");
     const files = await readdir(folder);
@@ -114,3 +144,5 @@ async function cleanFolder(folder: `./${string}`) {
         await unlink(`${folder}/${file}`);
     }
 }
+
+console.log("Listening on http://localhost:3000");

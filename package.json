@@ -6,9 +6,10 @@
     "@babel/runtime": "^7.23.2",
     "@types/react": "^18.2.37",
     "@types/react-dom": "^18.2.15",
+    "@types/showdown": "^2.0.6",
+    "@types/web": "^0.0.123",
     "@typescript-eslint/eslint-plugin": "^6.7.3",
     "@typescript-eslint/parser": "^6.7.3",
-    "@types/web": "^0.0.123",
     "bun-types": "^1.0.14",
     "eslint": "^8.53.0",
     "prettier": "^3.1.0",
@@ -17,8 +18,10 @@
   },
   "dependencies": {
     "eslint-plugin-import": "^2.29.0",
+    "highlight.js": "^11.9.0",
     "openai": "^4.17.4",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "showdown": "^2.1.0"
   }
 }
