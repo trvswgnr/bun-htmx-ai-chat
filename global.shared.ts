@@ -1,3 +1,5 @@
+import type OpenAI from "openai";
+
 declare global {
     namespace JSX {
         interface IntrinsicElements {
@@ -16,6 +18,15 @@ declare global {
     type ValidUrl = `http${"s" | ""}://${string}`;
     type ValidUrlPath = `/${string}`;
     type ValidEndpoint = ValidUrl | ValidUrlPath;
+
+    type MessageParam = OpenAI.Chat.Completions.ChatCompletionMessageParam;
+
+    type GlobalContext = {
+        messages: MessageParam[];
+        assets: Record<string, string[]>;
+    };
+
+    var context: GlobalContext;
 }
 
 Array.prototype.nth = function (n: number) {

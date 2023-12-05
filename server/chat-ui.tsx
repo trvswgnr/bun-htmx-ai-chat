@@ -1,9 +1,10 @@
-import OpenAI from "openai";
 import "./global.server";
+import { useContext } from "./util";
 
 function Layout({ children }: React.PropsWithChildren) {
-    const cssFiles = buildAssets.css;
-    const jsFiles = buildAssets.js;
+    const context = useContext();
+    const cssFiles = context.assets.css;
+    const jsFiles = context.assets.js;
     return (
         <html lang="en">
             <head>
@@ -33,61 +34,75 @@ function Layout({ children }: React.PropsWithChildren) {
 
 function Form({ disabled }: { disabled?: boolean }) {
     return (
-        <form hx-post="/send" hx-target="this" hx-swap="outerHTML">
-            <textarea
-                name="message"
-                placeholder="Message travvy.chat..."
-                disabled={disabled}></textarea>
-            <button id="submit" className="btn" disabled={disabled}>
-                {disabled ? "..." : "Submit"}
-            </button>
-        </form>
+        <>
+            <form
+                hx-post="/send"
+                hx-target="#messages"
+                hx-swap="beforeend"
+                hx-on="htmx:afterRequest:this.reset()"
+                hx-disabled-elt="#submit">
+                <textarea name="message" placeholder="Message travvy.chat..."></textarea>
+                <button id="submit" className="btn">
+                    Submit
+                </button>
+            </form>
+        </>
     );
 }
 
-export function Chat({
-    messages,
-}: {
-    messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[];
-}) {
+export function App() {
     return (
         <Layout>
-            <main className="chat">
-                <h1>htmx chat</h1>
-                <article className="scroller">
-                    <section id="messages" className="scroller-content">
-                        {messages.map((message, i) => (
-                            <div key={i} className="message">
-                                <h4>{message.role}</h4>
-                                <div className="message-content cloak">
-                                    {String(message.content)}
-                                </div>
-                            </div>
-                        ))}
-                    </section>
-                </article>
-                <Form />
-            </main>
+            <ChatMain />
+            <form hx-post="/clear" hx-target="#messages" hx-swap="outerHTML">
+                <button id="clear" className="btn" hx-disabled-elt="this">
+                    Clear chat
+                </button>
+            </form>
         </Layout>
     );
 }
 
-export function FormWithMessage({ message }: { message: string }) {
+export function ChatMain() {
+    return (
+        <main className="chat">
+            <h1>htmx chat</h1>
+            <article className="scroller">
+                <ChatMessages />
+            </article>
+            <Form disabled={true} />
+        </main>
+    );
+}
+
+export function ChatMessages() {
+    const context = useContext();
+    const messages = context.messages;
+    return (
+        <section id="messages" className="scroller-content">
+            {messages.map((message, i) => (
+                <div key={i} className="message">
+                    <h4>{message.role}</h4>
+                    <div className="message-content cloak">{String(message.content)}</div>
+                </div>
+            ))}
+        </section>
+    );
+}
+
+export function Message({ message }: { message: string }) {
     return (
         <>
-            <div hx-swap-oob="beforeend:#messages">
-                <div className="message">
-                    <h4>User</h4>
-                    {message}
-                </div>
-                <hr />
-                <div className="message">
-                    <h4>Bot</h4>
-                    <StreamingContent endpoint="/message" />
-                </div>
-                <hr />
+            <div className="message">
+                <h4>User</h4>
+                {message}
             </div>
-            <Form disabled={true} />
+            <hr />
+            <div className="message">
+                <h4>Bot</h4>
+                <StreamingContent endpoint="/message" />
+            </div>
+            <hr />
         </>
     );
 }

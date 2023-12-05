@@ -93,7 +93,11 @@ main > article {
 }
 
 .btn {
-    width: 69px;
+    min-width: 69px;
+    appearance: none;
+    border: 1px solid #ccc;
+    padding: 0.5rem;
+    background-color: papayawhip;
 }
 
 textarea {
@@ -112,7 +116,7 @@ textarea {
 .btn[disabled] {
     opacity: 0.4;
     cursor: not-allowed;
-    animation: pulse 1s infinite;
+    /* animation: pulse 1s infinite; */
 }
 
 @keyframes pulse {

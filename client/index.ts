@@ -14,6 +14,10 @@ for (const el of messageEls) {
     el.classList.remove("cloak");
 }
 
+document.body.addEventListener("htmx:load", function (event) {
+    console.log("htmx:load", event);
+});
+
 const scroller = document.querySelector<HTMLDivElement>(".scroller");
 let lastScrollTop = 0;
 if (scroller === null) throw new Error("no `.scroller` element found");
@@ -30,7 +34,17 @@ const handleScroll = () => {
     }
     lastScrollTop = scrollTop;
 };
+
 scroller.addEventListener("scroll", handleScroll, false);
+
+// document.querySelector<HTMLElement>(".chat")?.addEventListener("keyup", function (e) {
+//     if (!(e.target instanceof HTMLTextAreaElement)) return;
+//     const button = e.target.form?.querySelector<HTMLButtonElement>("#submit");
+//     if (!button) return;
+//     const value = e.target.value.trim();
+//     button.disabled = value === "";
+// });
+
 class StreamingContent extends HTMLElement {
     constructor() {
         super();
