@@ -12,6 +12,7 @@ function Layout({ children }: React.PropsWithChildren) {
                 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
                 <title>HTMX Chat</title>
                 <script src="https://unpkg.com/htmx.org@1.9.9/dist/htmx.min.js"></script>
+                <script src="https://unpkg.com/idiomorph/dist/idiomorph-ext.min.js"></script>
                 <script src="https://unpkg.com/idiomorph"></script>
                 <link
                     rel="stylesheet"
@@ -47,7 +48,8 @@ export function App() {
     return (
         <Layout>
             <ChatMain />
-            <form hx-ext="stream" hx-post="/test-stream">
+
+            <form hx-ext="stream" hx-post="/test-stream" hx-swap="outerHTML">
                 <input type="hidden" name="foo" value="lmaooooo" />
                 <button>Test htmx</button>
             </form>
@@ -92,6 +94,8 @@ export function ChatMessages() {
                     />
                 </div>
             ))}
+            <hr />
+            <div id="target"></div>
         </section>
     );
 }

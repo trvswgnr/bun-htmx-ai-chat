@@ -2,158 +2,39 @@ import { EventType, HtmxInternalApi, InternalData, Verb } from "htmx.org";
 
 let api: HtmxInternalApi;
 
-const xhrStates = {
-    UNSENT: 0,
-    OPENED: 1,
-    HEADERS_RECEIVED: 2,
-    LOADING: 3,
-    DONE: 4,
-} as const;
-
 htmx.defineExtension("stream", {
     init(apiRef) {
         api = apiRef;
     },
+    transformResponse(_: unknown, xhr: XMLHttpRequest, elt: HTMLElement & { seenBytes?: number }) {
+        if (!elt.seenBytes) {
+            elt.seenBytes = 0;
+        }
+        return xhr.responseText.slice(elt.seenBytes);
+    },
     onEvent(name, evt) {
-        if (evt.detail.eventName === "htmx:beforeRequest") {
-            const detail = evt.detail as DetailsMap["htmx:beforeRequest"];
-            const xhr = detail.xhr;
-            xhr.onload = null; // remove the default onload handler that swaps the content
-            let seenBytes = 0;
-            const elt = evt.detail.elt;
-            xhr.onreadystatechange = function (e) {
-                if (xhr.readyState === xhrStates.DONE) {
-                    const newData = xhr.response.substr(seenBytes);
-                    const beforeSwapDetail: BeforeSwapDetail = {
-                        shouldSwap: true,
-                        serverResponse: newData,
-                        isError: false,
-                        ignoreTitle: false,
-                    };
-                    const beforeSwapEvent = api.triggerEvent(
-                        elt,
-                        "htmx:beforeSwap",
-                        beforeSwapDetail,
-                    );
-                    if (beforeSwapEvent) {
-                        const swapStyle = api.getSwapSpecification(elt).swapStyle;
-                        const target = api.getTarget(elt);
-                        const settleInfo = api.makeSettleInfo(elt);
-                        api.selectAndSwap(swapStyle, target, elt, newData, settleInfo);
-                    }
-                    seenBytes = xhr.responseText.length;
+        if (name === "htmx:beforeRequest") {
+            var detail = evt.detail as DetailsMap["htmx:beforeRequest"];
+            var xhr = detail.xhr;
+            var onloadHandler = xhr.onload!.bind(xhr);
+            var elt = detail.elt as HTMLElement & { seenBytes: number };
+            xhr.onload = null;
+            elt.seenBytes = 0;
+            xhr.onreadystatechange = function (ev) {
+                if (xhr.readyState === 3) {
+                    const progressEvent = new ProgressEvent("ext:stream:chunk", {
+                        ...ev,
+                        lengthComputable: false,
+                        loaded: xhr.responseText.length,
+                        total: xhr.responseText.length,
+                    });
+                    onloadHandler(progressEvent);
+                    elt.seenBytes = xhr.responseText.length;
                 }
             };
         }
     },
 });
-
-// intercept the htmx:confirm event to stop the xhr request and instead use fetch to stream in the contents
-function streamThatShit<T extends EventType>(evt: TaggedEvent<T>) {}
-
-function startStream(detail: ResponseInfo) {
-    const { elt, requestConfig } = detail;
-    const { verb } = requestConfig;
-    const useUrlParams = htmx.config.methodsThatUseUrlParams.indexOf(verb) >= 0;
-    const params = useUrlParams ? null : encodeParamsForBody(elt, requestConfig.parameters);
-
-    const xhr = new XMLHttpRequest();
-    let seenBytes = 0;
-    xhr.open(verb, requestConfig.path);
-    xhr.onreadystatechange = function () {
-        console.log("state change.. state: " + xhr.readyState);
-
-        if (xhr.readyState == 3) {
-            var newData = xhr.response.substr(seenBytes);
-            elt.innerHTML = newData;
-
-            seenBytes = xhr.responseText.length;
-            console.log("seenBytes: " + seenBytes);
-        }
-    };
-
-    xhr.addEventListener("error", function (e) {
-        console.log("error: " + e);
-    });
-    xhr.send(params);
-    // const response = await xhrToFetch(xhr, params);
-    // if (!response.body) {
-    //     throw Error("ReadableStream not yet supported in this browser.");
-    // }
-
-    // const reader = response.body.getReader();
-    // const decoder = new TextDecoder();
-
-    // const read = async (): Promise<void> => {
-    //     const { done, value } = await reader.read();
-    //     if (done) return;
-    //     const decoded = decoder.decode(value);
-    //     const chunkEvent = htmx.trigger(elt, "ext:stream:chunk", { content: decoded });
-    //     if (chunkEvent) {
-    //         // default not prevented, so append the chunk
-    //         const beforeSwapDetail: BeforeSwapDetail = {
-    //             shouldSwap: true,
-    //             serverResponse: decoded,
-    //             isError: false,
-    //             ignoreTitle: false,
-    //         };
-    //         const beforeSwapEvent = htmx.trigger(elt, "htmx:beforeSwap", beforeSwapDetail);
-    //         if (beforeSwapEvent) {
-    //             const swapStyle = api.getSwapSpecification(elt).swapStyle;
-    //             const target = api.getTarget(elt);
-    //             const settleInfo = api.makeSettleInfo(elt);
-    //             api.selectAndSwap(swapStyle, target, elt, decoded, settleInfo);
-    //         }
-    //     }
-    //     return read();
-    // };
-    // return await read().catch((err: unknown) => {
-    //     const error = err instanceof Error ? err : new Error("unknown error");
-    //     const errorEvent = htmx.trigger(elt, "ext:stream:error", { error });
-    //     if (errorEvent) {
-    //         const beforeSwapDetail: BeforeSwapDetail = {
-    //             shouldSwap: true,
-    //             serverResponse: `<p>Error: ${error.message}</p>`,
-    //             isError: true,
-    //             ignoreTitle: false,
-    //         };
-    //         const beforeSwapEvent = htmx.trigger(elt, "htmx:beforeSwap", beforeSwapDetail);
-    //         if (beforeSwapEvent) {
-    //             const swapStyle = api.getSwapSpecification(elt).swapStyle;
-    //             const target = api.getTarget(elt);
-    //             const settleInfo = api.makeSettleInfo(elt);
-    //             api.selectAndSwap(
-    //                 swapStyle,
-    //                 target,
-    //                 elt,
-    //                 beforeSwapDetail.serverResponse,
-    //                 settleInfo,
-    //             );
-    //         }
-    //     }
-    // });
-}
-
-// function triggerExtError(elt: HTMLElement) {
-//     return;
-// }
-
-// function assertIsValidEventName<T extends keyof DetailsMap>(name: string): asserts name is T {
-//     const mutEventNames: string[] = [...eventNames];
-//     if (!mutEventNames.includes(name) && name.match(/^ext:/) === null) {
-//         throw new Error(`invalid event name: ${name}`);
-//     }
-// }
-
-function taggedEvent<T extends keyof DetailsMap, X extends { detail: Partial<DetailsMap[T]> }>(
-    name: T,
-    obj: X,
-): X & { detail: DetailsMap[T] } {
-    obj.detail.eventName = name;
-    return obj as X & { detail: DetailsMap[T] };
-}
-
-type TaggedEvent<T extends keyof DetailsMap> = CustomEvent<DetailsMap[T]>;
 
 type DetailsMap = {
     [K in keyof UntaggedDetailsMap as K]: { eventName: K } & UntaggedDetailsMap[K];

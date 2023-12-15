@@ -29,7 +29,7 @@ export function serve() {
             const path = url.pathname;
             if (path === "/test-htmx") {
                 const html = `
-                    <form hx-ext="stream" hx-get="/test-htmx">
+                    <form hx-ext="stream" hx-get="/test-htmx" hx-swap="outerHTML">
                         <input type="hidden" name="foo" value="ayyyyy" />
                         <button>WOOOOOOOOO</button>
                     </form>
@@ -47,12 +47,23 @@ export function serve() {
                 const renderResult = await arcdown.render(raw);
                 const html: string = renderResult.html;
                 const form = `
-                    <form hx-ext="stream" hx-get="/test-stream">
+                    <form hx-ext="stream" hx-get="/test-stream" hx-swap="outerHTML">
                         <input type="hidden" name="foo" value="ayyyyy" />
                         <button>WOOOOOOOOO</button>
                     </form>
                 `;
-                let fullText = form;
+                let fullText = "";
+                const updatedFull = (text: string) => {
+                    fullText += text;
+                    return `
+                    <form hx-ext="stream" hx-get="/test-stream" hx-swap="outerHTML">
+                        <input type="hidden" name="foo" value="ayyyyy" />
+                        <button>WOOOOOOOOO</button>
+                        ${fullText}
+                    </form>
+                `;
+                };
+                let fullHtml = updatedFull("");
                 const decoder = new TextDecoder();
 
                 const stream = new ReadableStream({
@@ -60,8 +71,8 @@ export function serve() {
                     async pull(controller) {
                         for await (const chunk of await chunks(html, 100)) {
                             await new Promise((resolve) => setTimeout(resolve, 100));
-                            fullText += decoder.decode(chunk);
-                            controller.enqueue(fullText);
+                            fullHtml = updatedFull(decoder.decode(chunk));
+                            controller.enqueue(fullHtml);
                         }
                         controller.close();
                     },
@@ -75,11 +86,14 @@ export function serve() {
             if (path === "/test") {
                 const completion = await openai.chat.completions.create({
                     messages: [
-                        { role: "system", content: "You output historical documents." },
+                        {
+                            role: "system",
+                            content:
+                                "You are a helpful assistant. You output everything in markdown and specify languages in code blocks.",
+                        },
                         {
                             role: "user",
-                            content:
-                                "Recite the first 5 sentences of the declaration of independence.",
+                            content: "Show me some good examples of Python.",
                         },
                     ],
                     model: "gpt-3.5-turbo",
@@ -87,6 +101,8 @@ export function serve() {
                 });
 
                 const stream = completion.toReadableStream();
+                let full = "";
+                const arcdown = new Arcdown();
                 const body = new ReadableStream({
                     start(controller) {
                         controller.enqueue("<h4>Assistant</h4>");
@@ -102,7 +118,9 @@ export function serve() {
                                 return;
                             }
                             const message = choice.delta.content ?? "";
-                            controller.enqueue(message);
+                            full += message;
+                            const { html } = await arcdown.render(full);
+                            controller.enqueue(html);
                         }
                         controller.close();
                     },
