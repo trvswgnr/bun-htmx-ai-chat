@@ -4,7 +4,7 @@ export async function build() {
     const start = Bun.nanoseconds();
     const outdir = "./public";
 
-    await cleanFolder(outdir);
+    // await cleanFolder(outdir);
 
     const build = await Bun.build({
         entrypoints: ["./client/index.ts"],

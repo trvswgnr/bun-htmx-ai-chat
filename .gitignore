@@ -178,3 +178,8 @@ dist
 .DS_Store
 
 db/
+
+
+# Added by cargo
+
+/target

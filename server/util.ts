@@ -1,29 +1,26 @@
-import messages from "~/db/messages.json";
-import { Arcdown } from "arcdown";
+import { Arcdown } from "~/lib/arcdown/src";
 
 declare global {
+    type Message = {
+        role: string;
+        content: string;
+    };
+    type MessageWithHtml = Message & { html: string };
     type GlobalContext = {
+        dbFile: string;
         messages: MessageParam[];
+        messagesWithHtml: MessageWithHtml[];
         assets: Record<string, string[] | undefined>;
     };
 }
 
-declare module "./util" {
-    var __context: GlobalContext;
-}
-
-const arcdown = new Arcdown();
-const htmlMessages: typeof messages = [];
-for (const message of messages) {
-    console.log("server message", message);
-    const { html } = await arcdown.render(message.content);
-    htmlMessages.push({ ...message, content: html });
-}
-
-(globalThis as any).__context ??= {
-    messages: htmlMessages as any,
+const __context: GlobalContext = {
+    messages: [],
+    messagesWithHtml: [],
+    dbFile: "./db/messages.json",
     assets: {},
 };
+await refreshMessages();
 
 export function useContext(): GlobalContext;
 export function useContext<T extends keyof GlobalContext>(key: T): GlobalContext[T];
@@ -36,4 +33,18 @@ export function useContext<T extends keyof GlobalContext>(key?: T) {
 
 export function setContext<T extends keyof GlobalContext>(key: T, value: GlobalContext[T]) {
     __context[key] = value;
+}
+
+export async function refreshMessages() {
+    const file = Bun.file("./db/messages.json");
+    const messages = await file.json<Message[]>();
+    const arcdown = new Arcdown();
+    const messagesWithHtml: MessageWithHtml[] = [];
+    for (const message of messages) {
+        const { html } = await arcdown.render(message.content);
+        messagesWithHtml.push({ ...message, html });
+    }
+    setContext("messages", messages as MessageParam[]);
+    setContext("messagesWithHtml", messagesWithHtml);
+    return { messages, messagesWithHtml };
 }

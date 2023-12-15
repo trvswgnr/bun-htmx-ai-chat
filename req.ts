@@ -1,0 +1,25 @@
+const x = {
+    method: "GET",
+    url: "http://localhost:3000/test-htmx?foo=lmaooooo",
+    headers: {
+        host: "localhost:3000",
+        connection: "keep-alive",
+        pragma: "no-cache",
+        "cache-control": "no-cache",
+        "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        accept: "*/*",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-dest": "empty",
+        referer: "http://localhost:3000/",
+        "accept-encoding": "gzip, deflate, br",
+        "accept-language": "en-US,en;q=0.9",
+        cookie: "_ga=GA1.1.1172301352.1650656110; _shopify_y=ace0b4bc-4806-4203-B820-8EDBD1851CDD;",
+        "sec-ch-ua": '"Google Chrome";v="119", "Chromium";v="119", "Not?A_Brand";v="24"',
+        "hx-request": "true",
+        "hx-current-url": "http://localhost:3000/",
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"macOS"',
+        "sec-fetch-site": "same-origin",
+    },
+};

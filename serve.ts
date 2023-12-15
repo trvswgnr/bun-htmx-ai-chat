@@ -3,8 +3,9 @@ import OpenAI from "openai";
 const openai = new OpenAI();
 import _messages from "~/db/messages.json";
 import { App, ChatMessages, Message, Test } from "~/server/chat-ui";
-import { useContext } from "~/server/util";
+import { refreshMessages, useContext } from "~/server/util";
 import { build } from "./build";
+import { Arcdown } from "~/lib/arcdown/src";
 
 await build();
 serve();
@@ -26,9 +27,46 @@ export function serve() {
         async fetch(req) {
             const url = new URL(req.url);
             const path = url.pathname;
-            if (path === "/test-stream") {
-                const html = await renderToReadableStream(Test());
+            if (path === "/test-htmx") {
+                const html = `
+                    <form hx-ext="stream" hx-get="/test-htmx">
+                        <input type="hidden" name="foo" value="ayyyyy" />
+                        <button>WOOOOOOOOO</button>
+                    </form>
+                `;
                 return new Response(html, {
+                    headers: {
+                        "Content-Type": "text/html",
+                    },
+                });
+            }
+
+            if (path === "/test-stream") {
+                const raw = await Bun.file("./server/markdown-sampler.md").text();
+                const arcdown = new Arcdown();
+                const renderResult = await arcdown.render(raw);
+                const html: string = renderResult.html;
+                const form = `
+                    <form hx-ext="stream" hx-get="/test-stream">
+                        <input type="hidden" name="foo" value="ayyyyy" />
+                        <button>WOOOOOOOOO</button>
+                    </form>
+                `;
+                let fullText = form;
+                const decoder = new TextDecoder();
+
+                const stream = new ReadableStream({
+                    start(controller) {},
+                    async pull(controller) {
+                        for await (const chunk of await chunks(html, 100)) {
+                            await new Promise((resolve) => setTimeout(resolve, 100));
+                            fullText += decoder.decode(chunk);
+                            controller.enqueue(fullText);
+                        }
+                        controller.close();
+                    },
+                });
+                return new Response(stream, {
                     headers: {
                         "Content-Type": "text/html",
                     },
@@ -75,7 +113,20 @@ export function serve() {
                     },
                 });
             }
+
             if (path.startsWith("/public")) {
+                const file = Bun.file(`./${url.pathname}`);
+                if (!file.exists()) {
+                    return new Response("Not found", { status: 404 });
+                }
+                return new Response(file, {
+                    headers: {
+                        "Content-Type": file.type,
+                    },
+                });
+            }
+
+            if (path.startsWith("/pkg")) {
                 const file = Bun.file(`./${url.pathname}`);
                 if (!file.exists()) {
                     return new Response("Not found", { status: 404 });
@@ -100,7 +151,6 @@ export function serve() {
                 console.log("clearing chat");
                 const res = await clearChat()
                     .then(async () => {
-                        console.log("messages", messages);
                         const html = await renderToReadableStream(ChatMessages());
                         return new Response(html, {
                             headers: {
@@ -114,6 +164,22 @@ export function serve() {
                         return new Response("Internal Server Error", { status: 500 });
                     });
                 return res;
+            }
+
+            if (path === "/render-markdown" && req.method === Method.POST) {
+                const arcdown = new Arcdown({
+                    hljs: {
+                        languages: ["javascript", "typescript", "bash", "json", "sh"],
+                    },
+                });
+                const data = await req.json();
+                const { html } = await arcdown.render(data.content);
+                return new Response(html, {
+                    status: 200,
+                    headers: {
+                        "Content-Type": "text/html",
+                    },
+                });
             }
 
             if (path === "/message") {
@@ -178,7 +244,7 @@ export function serve() {
     return server;
 }
 
-async function addMessage(message: OpenAI.Chat.Completions.ChatCompletionMessageParam) {
+async function addMessage(message: MessageParam) {
     messages.push(message);
     const file = Bun.file("./db/messages.json");
     const writer = file.writer();
@@ -192,4 +258,44 @@ async function clearChat() {
     const writer = file.writer();
     writer.write(JSON.stringify(messages));
     writer.end();
+    await refreshMessages();
+}
+
+/**
+ * Splits an async iterable into chunks of a given size (in bytes).
+ */
+async function chunks(array: string, size: number): Promise<Uint8Array[]>;
+async function chunks(
+    array: AsyncIterableIterator<Uint8Array>,
+    size: number,
+): Promise<Uint8Array[]>;
+async function chunks(array: Uint8Array, size: number): Promise<Uint8Array[]>;
+async function chunks(
+    array: AsyncIterableIterator<Uint8Array> | string | Uint8Array,
+    size: number,
+): Promise<Uint8Array[]> {
+    if (array instanceof Uint8Array) {
+        return chunks(asyncIterableIteratorFrom(array), size);
+    }
+    if (typeof array === "string") {
+        const encoder = new TextEncoder();
+        const buffer = encoder.encode(array);
+        return chunks(buffer, size);
+    }
+    const arrs: Uint8Array[] = [];
+    let offset = 0;
+    for await (const item of array) {
+        let len = item.byteLength;
+        while (len > 0) {
+            const buffer = item.buffer.slice(offset, offset + size);
+            arrs.push(new Uint8Array(buffer));
+            offset += Math.min(size, len);
+            len -= size;
+        }
+    }
+    return arrs;
+}
+
+async function* asyncIterableIteratorFrom<T>(item: T): AsyncIterableIterator<T> {
+    yield item;
 }

@@ -1,29 +1,55 @@
 import "./global.client";
 import "./style.css";
 import "./htmx-streaming";
+import "./stream-html-component";
 
-// const converter = new showdown.Converter();
-// converter.setFlavor("github");
-// const messageEls = document.querySelectorAll<HTMLDivElement>(".message-content");
-// for (const el of messageEls) {
-//     const text = el.innerText;
-//     el.innerHTML = converter.makeHtml(text);
-//     const codeEls = el.querySelectorAll("pre");
-//     for (const codeEl of codeEls) {
-//         hljs.highlightElement(codeEl);
+// .............................................................................
+
+function deepMerge<A, B>(a: A, b: B): A & B {
+    if (typeof a !== "object" || a === null) return b as any;
+    if (typeof b !== "object" || b === null) return a as any;
+    const result = Object.assign({}, a) as any;
+    for (const key in b) {
+        if (!(key in result)) {
+            result[key] = b[key];
+        } else {
+            result[key] = deepMerge(result[key], b[key]);
+        }
+    }
+    return result;
+}
+
+// document.addEventListener("stream:chunk", function (e) {
+//     e.preventDefault();
+//     if (!(e instanceof CustomEvent)) {
+//         console.error("stream:chunk event is not a CustomEvent");
+//         return;
 //     }
-//     el.classList.remove("cloak");
-// }
+//     fetch("/render-markdown", {
+//         method: "POST",
+//         body: JSON.stringify({ content: e.detail.content }),
+//     })
+//         .then((res) => res.text())
+//         .then((html) => {
+//             shittyMorph(e.target, html);
+//         });
+// });
 
-import { Arcdown } from "arcdown";
-const arcdown = new Arcdown();
-document.body.addEventListener("htmx:stream", function (e) {
-    if (!(e.target instanceof HTMLElement)) return;
-    arcdown.render(e.target.innerText).then(({ html }) => {
-        if (!(e.target instanceof HTMLElement)) return;
-        e.target.innerHTML = html;
-    });
-});
+// document.body.addEventListener("htmx:stream", function (e) {
+// if (!(e instanceof CustomEvent)) return;
+// if (!(e.target instanceof HTMLElement)) return;
+// e.target.dataset.content ??= "";
+// e.target.dataset.content += e.detail.content;
+// fetch("/render-markdown", {
+//     method: "POST",
+//     body: JSON.stringify({ content: e.target.dataset.content }),
+// })
+//     .then((res) => res.text())
+//     .then((html) => {
+//         if (!(e.target instanceof HTMLElement)) return;
+//         e.target.innerHTML = html;
+//     });
+// });
 
 document.querySelector<HTMLButtonElement>("#pause")?.addEventListener("click", function (e) {
     const content = document.querySelector<HTMLDivElement>("#content");
@@ -119,3 +145,80 @@ document.querySelector<HTMLElement>(".chat")?.addEventListener("keyup", function
 // }
 
 // customElements.define("streaming-content", StreamingContent);
+
+(NodeList as any).prototype.autosize = function () {
+    return autosize(this);
+};
+
+// document.querySelectorAll("textarea").autosize();
+initAutosize();
+
+function initAutosize(selector = "textarea"): void {
+    document.querySelectorAll(selector).forEach(resize);
+    document.addEventListener("input", (e) => {
+        if (!(e.target instanceof Element)) return;
+        if (e.target.matches(selector)) autosize(e.target);
+    });
+}
+
+function autosize(target: HTMLCollectionOf<Element>): void;
+function autosize(target: NodeListOf<Element>): void;
+function autosize(target: Element): void;
+function autosize(target: string): void;
+function autosize(target: unknown): void {
+    switch (true) {
+        case target instanceof HTMLCollection:
+        case target instanceof NodeList:
+            autosizeAll(target);
+            break;
+        case target instanceof Element:
+            autosizeOne(target);
+            break;
+        case typeof target === "string": {
+            const els = document.querySelectorAll(target);
+            autosizeAll(els);
+            break;
+        }
+        default:
+            throw new Error("invalid selector");
+    }
+}
+
+function autosizeAll(target: Iterable<Node>): void {
+    for (const el of target) {
+        autosizeOne(el);
+    }
+}
+
+function autosizeOne(target: Node): void {
+    resize(target);
+    target.addEventListener("input", () => resize(target));
+}
+
+/** Resize an element to fit its content */
+type ElShape = {
+    style: unknown;
+    scrollHeight: unknown;
+};
+function resize(el: Node) {
+    assertShape(el, "style", "scrollHeight");
+    assertShape(el.style, "resize", "overflow", "height");
+    el.style.resize = "none";
+    el.style.overflow = "hidden";
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+}
+
+function assertShape<T, K extends PropertyKey>(
+    obj: T,
+    ...keys: K[]
+): asserts obj is T & Record<K, unknown> {
+    if (typeof obj !== "object" || obj === null) throw new Error("invalid object");
+    if (!keys.every((key) => key in obj)) throw new Error("invalid keys");
+}
+
+declare global {
+    interface NodeListOf<TNode extends Node> {
+        autosize<T extends HTMLTextAreaElement>(this: NodeListOf<T>): void;
+    }
+}
