@@ -16,16 +16,12 @@ function Layout({ children }: React.PropsWithChildren) {
                     rel="stylesheet"
                     href="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/styles/base16/gruvbox-light-hard.min.css"
                 />
-                {cssFiles.map((file) => (
-                    <link key={file} rel="stylesheet" href={file} />
-                ))}
+                {cssFiles?.map((file) => <link key={file} rel="stylesheet" href={file} />)}
                 <script
                     src="https://unpkg.com/@highlightjs/cdn-assets@11.9.0/highlight.min.js"
                     defer></script>
                 <script src="https://unpkg.com/showdown/dist/showdown.min.js" defer></script>
-                {jsFiles.map((file) => (
-                    <script key={file} src={file} defer></script>
-                ))}
+                {jsFiles?.map((file) => <script key={file} src={file} defer></script>)}
             </head>
             <body>{children}</body>
         </html>
@@ -54,16 +50,11 @@ export function App() {
     return (
         <Layout>
             <ChatMain />
-            <form hx-post="/clear" hx-target="#messages" hx-swap="outerHTML">
-                <button id="clear" className="btn" hx-disabled-elt="this">
-                    Clear chat
-                </button>
-            </form>
         </Layout>
     );
 }
 
-export function ChatMain() {
+function ChatMain() {
     return (
         <main className="chat">
             <h1>htmx chat</h1>
@@ -71,6 +62,11 @@ export function ChatMain() {
                 <ChatMessages />
             </article>
             <Form disabled={true} />
+            <form hx-post="/clear" hx-target="#messages" hx-swap="outerHTML">
+                <button id="clear" className="btn" hx-disabled-elt="this">
+                    Clear chat
+                </button>
+            </form>
         </main>
     );
 }
@@ -83,7 +79,10 @@ export function ChatMessages() {
             {messages.map((message, i) => (
                 <div key={i} className="message">
                     <h4>{message.role}</h4>
-                    <div className="message-content cloak">{String(message.content)}</div>
+                    <div
+                        className="message-content"
+                        dangerouslySetInnerHTML={{ __html: message.content ?? "" }}
+                    />
                 </div>
             ))}
         </section>
@@ -98,12 +97,31 @@ export function Message({ message }: { message: string }) {
                 {message}
             </div>
             <hr />
-            <div className="message">
-                <h4>Bot</h4>
-                <StreamingContent endpoint="/message" />
-            </div>
+            <div
+                style={{ minHeight: "100px" }}
+                className="message"
+                hx-ext="stream"
+                hx-get="/message"
+                hx-trigger="click"
+                hx-swap="beforeend"></div>
             <hr />
         </>
+    );
+}
+
+export function Test() {
+    return (
+        <Layout>
+            <div
+                style={{ minHeight: "100px" }}
+                id="content"
+                hx-ext="stream"
+                hx-get="/test"
+                hx-swap="beforeend"
+                hx-trigger="click"></div>
+            <button id="pause">Pause</button>
+            <button id="resume">Resume</button>
+        </Layout>
     );
 }
 

@@ -20,15 +20,20 @@ declare global {
     type ValidEndpoint = ValidUrl | ValidUrlPath;
 
     type MessageParam = OpenAI.Chat.Completions.ChatCompletionMessageParam;
-
-    type GlobalContext = {
-        messages: MessageParam[];
-        assets: Record<string, string[]>;
-    };
-
-    var context: GlobalContext;
+    function chain<T>(...iterables: AsyncIterable<T>[]): AsyncGenerator<T>;
 }
 
 Array.prototype.nth = function (n: number) {
     return this[n] ?? null;
+};
+
+globalThis.chain = async function* (...iterables) {
+    const iterators = iterables.map((iterable) => iterable[Symbol.asyncIterator]());
+    while (true) {
+        const result = await Promise.any(iterators.map((iterator) => iterator.next()));
+        if (result.done) {
+            return;
+        }
+        yield result.value;
+    }
 };

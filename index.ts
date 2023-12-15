@@ -1,25 +1,28 @@
 import fs from "node:fs/promises";
-import { build, serve } from "./serve";
-
-const buildOutput = await build();
-const server = await serve();
-
-async function* combineAsyncIterables<T>(...iterables: AsyncIterable<T>[]): AsyncIterable<T> {
-    const iterators = iterables.map((iterable) => iterable[Symbol.asyncIterator]());
-    while (true) {
-        const result = await Promise.any(iterators.map((iterator) => iterator.next()));
-        if (result.done) {
-            return;
-        }
-        yield result.value;
-    }
+import "~/global.shared";
+import { exec as execSync } from "node:child_process";
+function buildAndServe() {
+    const child = execSync("bun run serve.ts");
+    child.addListener("error", (err) => {
+        console.error(err);
+    });
+    child.stdout?.addListener("data", (data) => {
+        process.stdout.write(data);
+    });
+    child.stderr?.addListener("data", (data) => {
+        process.stderr.write(data);
+    });
+    return child;
 }
+
+let child = buildAndServe();
 
 const clientWatcher = fs.watch("./client", { recursive: true });
 const serverWatcher = fs.watch("./server", { recursive: true });
-const events = combineAsyncIterables(clientWatcher, serverWatcher);
+const events = chain(clientWatcher, serverWatcher);
 for await (const { eventType, filename } of events) {
     const type = eventType.replace(/e$/, "");
     console.log(`${filename} ${type}ed, reloading...`);
-    await server.reload();
+    child.kill();
+    child = buildAndServe();
 }

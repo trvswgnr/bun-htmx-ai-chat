@@ -1,9 +1,16 @@
-import { renderToReadableStream, renderToStaticMarkup } from "react-dom/server";
+import { renderToReadableStream } from "react-dom/server";
 import OpenAI from "openai";
 const openai = new OpenAI();
-import { App, ChatMain, ChatMessages, Message } from "./server/chat-ui.tsx";
 import _messages from "~/db/messages.json";
-import { Serve } from "bun";
+import { App, ChatMessages, Message, Test } from "~/server/chat-ui";
+import { useContext } from "~/server/util";
+import { build } from "./build";
+
+await build();
+serve();
+
+const messages = useContext("messages");
+const messageQueue: string[] = [];
 
 enum Method {
     GET = "GET",
@@ -13,37 +20,20 @@ enum Method {
     DELETE = "DELETE",
 }
 
-globalThis.context = {
-    messages: _messages as MessageParam[],
-    assets: {},
-};
-
-const messages = globalThis.context.messages;
-
-async function addMessage(message: OpenAI.Chat.Completions.ChatCompletionMessageParam) {
-    messages.push(message);
-    const file = Bun.file("./db/messages.json");
-    const writer = file.writer();
-    writer.write(JSON.stringify(messages));
-    writer.end();
-}
-
-async function clearChat() {
-    messages.length = 1;
-    const file = Bun.file("./db/messages.json");
-    const writer = file.writer();
-    writer.write(JSON.stringify(messages));
-    writer.end();
-}
-
-const messageQueue: string[] = [];
-
-export async function serve() {
-    const options: Serve = {
+export function serve() {
+    const server = Bun.serve({
         port: 3000,
         async fetch(req) {
             const url = new URL(req.url);
             const path = url.pathname;
+            if (path === "/test-stream") {
+                const html = await renderToReadableStream(Test());
+                return new Response(html, {
+                    headers: {
+                        "Content-Type": "text/html",
+                    },
+                });
+            }
             if (path === "/test") {
                 const completion = await openai.chat.completions.create({
                     messages: [
@@ -57,35 +47,29 @@ export async function serve() {
                     model: "gpt-3.5-turbo",
                     stream: true,
                 });
+
                 const stream = completion.toReadableStream();
-                // transform each message to html so we can stream it
-                const transformer = new TransformStream({
-                    transform(chunk, controller) {
-                        const textDecoder = new TextDecoder();
-                        const json = textDecoder.decode(chunk);
-                        const data: OpenAI.ChatCompletionChunk = JSON.parse(json);
-                        const choice = data.choices.nth(0);
-                        if (choice === null || choice.finish_reason === "stop") {
-                            controller.terminate();
-                            return;
-                        }
-                        const message = choice.delta.content ?? "";
-                        controller.enqueue(message);
+                const body = new ReadableStream({
+                    start(controller) {
+                        controller.enqueue("<h4>Assistant</h4>");
                     },
-                });
-                const readable = stream.pipeThrough(transformer);
-                // wrap it all in a div
-                const wrapper = new ReadableStream({
                     async pull(controller) {
-                        controller.enqueue("<div class='chattyboi'>\n");
-                        for await (const chunk of readable) {
-                            controller.enqueue(chunk);
+                        for await (const chunk of stream) {
+                            const textDecoder = new TextDecoder();
+                            const json = textDecoder.decode(chunk);
+                            const data: OpenAI.ChatCompletionChunk = JSON.parse(json);
+                            const choice = data.choices.nth(0);
+                            if (choice === null || choice.finish_reason === "stop") {
+                                controller.close();
+                                return;
+                            }
+                            const message = choice.delta.content ?? "";
+                            controller.enqueue(message);
                         }
-                        controller.enqueue("\n</div>");
                         controller.close();
                     },
                 });
-                return new Response(wrapper, {
+                return new Response(body, {
                     headers: {
                         "Content-Type": "text/html",
                     },
@@ -136,7 +120,6 @@ export async function serve() {
                 const message = messageQueue.shift() || "";
                 const textDecoder = new TextDecoder();
                 const stream = new ReadableStream({
-                    type: "direct",
                     async pull(controller) {
                         if (!message) return;
                         addMessage({ role: "user", content: message });
@@ -150,19 +133,18 @@ export async function serve() {
                             stream: true,
                         });
                         const stream = completion.toReadableStream();
+
                         for await (const chunk of stream) {
                             const json = textDecoder.decode(chunk);
                             const data: OpenAI.ChatCompletionChunk = JSON.parse(json);
                             const choice = data.choices.nth(0);
                             if (choice === null || choice.finish_reason === "stop") {
-                                controller.write(`data: ${JSON.stringify(null)}\n\n`);
-                                controller.flush();
                                 break;
                             }
                             const message = choice.delta.content ?? "";
                             assistantMessage.content += message;
-                            controller.write(`data: ${JSON.stringify(message)}\n\n`);
-                            controller.flush();
+                            controller.enqueue(message);
+                            process.stdout.write(message);
                         }
                         if (assistantMessage.content) {
                             addMessage(assistantMessage);
@@ -186,142 +168,28 @@ export async function serve() {
                     return new Response("Bad Request", { status: 400 });
                 }
                 messageQueue.push(message);
-                const form = renderToStaticMarkup(Message({ message }));
+                const form = await renderToReadableStream(Message({ message }));
                 return new Response(form, { status: 200 });
             }
             return new Response("Not found", { status: 404 });
         },
-    };
-
-    let server = Bun.serve(options);
-
+    });
     console.log("Listening on http://localhost:3000");
-
-    return {
-        async reload() {
-            server.stop();
-            server = Bun.serve(options);
-        },
-    };
+    return server;
 }
 
-export async function build() {
-    const start = Bun.nanoseconds();
-    const outdir = "./public";
-
-    await cleanFolder(outdir);
-
-    const build = await Bun.build({
-        entrypoints: ["./client/index.ts"],
-        outdir,
-        naming: "[dir]/[name].[hash].[ext]",
-        sourcemap: "external",
-    });
-
-    const currentDir = import.meta.dir; // *note: no trailing slash
-
-    const buildAssetInfos: { path: string; size: number }[] = [];
-    for (const output of build.outputs) {
-        const path = output.path.replace(currentDir, ".");
-        buildAssetInfos.push({ path, size: output.size });
-    }
-    const buildAssets: Record<string, string[]> = {};
-    for (const { path } of buildAssetInfos) {
-        const ext = path.split(".").pop()!;
-        buildAssets[ext] ??= [];
-        buildAssets[ext].push(path);
-    }
-    globalThis.context.assets = buildAssets;
-
-    const end = Bun.nanoseconds();
-    const duration = formatNanoseconds(end - start);
-    const longestPath = buildAssetInfos.reduce(
-        (a, b) => (a.length > b.path.length ? a : b.path),
-        "",
-    );
-    const longestPathLength = longestPath.length;
-    for (const asset of buildAssetInfos) {
-        const padding = " ".repeat(longestPathLength - asset.path.length);
-        console.log(`${asset.path}${padding}   ${formatBytes(asset.size)}`);
-    }
-    console.log(
-        `${color.gray(`[${duration}]`)} ${color.green("bundle")} ${buildAssetInfos.length} modules`,
-    );
-    return build;
+async function addMessage(message: OpenAI.Chat.Completions.ChatCompletionMessageParam) {
+    messages.push(message);
+    const file = Bun.file("./db/messages.json");
+    const writer = file.writer();
+    writer.write(JSON.stringify(messages));
+    writer.end();
 }
 
-async function cleanFolder(folder: `./${string}`) {
-    const { readdir, unlink } = await import("node:fs/promises");
-    const files = await readdir(folder);
-    for (const file of files) {
-        await unlink(`${folder}/${file}`);
-    }
+async function clearChat() {
+    messages.length = 1;
+    const file = Bun.file("./db/messages.json");
+    const writer = file.writer();
+    writer.write(JSON.stringify(messages));
+    writer.end();
 }
-
-// returns the largest unit of time that is not 0
-function formatNanoseconds(nanoseconds: number) {
-    const units = [
-        { unit: "day", divisor: 8.64e13 },
-        { unit: "hour", divisor: 3.6e12 },
-        { unit: "minute", divisor: 6e10 },
-        { unit: "second", divisor: 1e9 },
-        { unit: "millisecond", divisor: 1e6 },
-        { unit: "microsecond", divisor: 1e3 },
-        { unit: "nanosecond", divisor: 1 },
-    ];
-
-    let value = nanoseconds;
-    let finalUnit = "nanosecond";
-    for (const { unit, divisor } of units) {
-        value = nanoseconds / divisor;
-        if (value > 1) {
-            finalUnit = unit;
-            break;
-        }
-    }
-    const str = Math.round(value).toLocaleString("en-us", {
-        unit: finalUnit,
-        style: "unit",
-        unitDisplay: "narrow",
-        maximumFractionDigits: 0,
-        minimumFractionDigits: 0,
-        maximumSignificantDigits: 2,
-        minimumSignificantDigits: 1,
-    });
-    return str;
-}
-
-function formatBytes(bytes: number) {
-    const units = [
-        { unit: "gigabyte", divisor: 1e9 },
-        { unit: "megabyte", divisor: 1e6 },
-        { unit: "kilobyte", divisor: 1e3 },
-        { unit: "byte", divisor: 1 },
-    ];
-
-    let value = bytes;
-    let finalUnit = "byte";
-    for (const { unit, divisor } of units) {
-        value = bytes / divisor;
-        if (value > 1) {
-            finalUnit = unit;
-            break;
-        }
-    }
-    const str = Math.round(value).toLocaleString("en-us", {
-        unit: finalUnit,
-        style: "unit",
-        unitDisplay: "short",
-        maximumFractionDigits: 0,
-        minimumFractionDigits: 0,
-        maximumSignificantDigits: 2,
-        minimumSignificantDigits: 1,
-    });
-    return str;
-}
-
-const color = {
-    green: (text: string) => `\x1b[32m${text}\x1b[0m`,
-    red: (text: string) => `\x1b[31m${text}\x1b[0m`,
-    gray: (text: string) => `\x1b[90m${text}\x1b[0m`,
-};
